@@ -234,112 +234,81 @@ const EncuestaWebinar = () => {
     let correoParaEnviar = '';
 
     if (esEstudianteUSS) {
-      correoParaEnviar = `${nombreUsuario}@uss.edu.pe`.toLowerCase();
+      const nombreLimpio = nombreUsuario.trim().toLowerCase();
+      correoParaEnviar = `${nombreLimpio}@uss.edu.pe`;
     } else if (tipoUsuario === 'externo') {
       correoParaEnviar = correoExterno.trim();
     }
 
-    // Crear registros
-    const registros = esEstudianteUSS
-      ? estudiantesEncontrados.map((cur) => {
-          const cursoKey = Object.keys(cur).find(k => k.toLowerCase() === 'curso') || "Curso";
-          const peadKey = Object.keys(cur).find(k => k.toLowerCase().includes('secc')) || "Sección (PEAD)";
-          
-          return {
-            nombreCompleto: formData.nombreCompleto.trim(),
-            curso: cur[cursoKey] || '',
-            pead: cur[peadKey] || '',
-            comentarios: formData.comentarios || '',
-            solicitaCertificado: formData.solicitaCertificado,
-            tipoUsuario: tipoUsuarioTexto,
-            email: correoParaEnviar,
-            correo: correoParaEnviar
-          };
-        })
-      : [{
-          nombreCompleto: formData.nombreCompleto.trim(),
-          curso: '',
-          pead: '',
-          comentarios: formData.comentarios || '',
-          solicitaCertificado: formData.solicitaCertificado,
-          tipoUsuario: tipoUsuarioTexto,
-          correo: correoParaEnviar
-        }];
-
-    console.log(`📤 Preparando ${registros.length} registro(s)`, registros);
-
-    if (registros.length === 0) {
-      throw new Error('No hay cursos válidos para registrar');
-    }
-
-    setProgreso({ actual: 1, total: registros.length });
-
-    for (let i = 0; i < registros.length; i++) {
-      const registro = registros[i];
-      console.log(`📝 Enviando registro ${i + 1}/${registros.length}:`, registro);
-
-      setProgreso({ actual: i + 1, total: registros.length });
-
-      const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(registro)
-      });
-
-      // Verificar si la respuesta es OK
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`❌ HTTP ${response.status}:`, errorText);
-        throw new Error(`Error HTTP: ${response.status}`);
-      }
-
-      // Obtener la respuesta como texto primero
-      const responseText = await response.text();
-      console.log(`📥 Respuesta cruda (${i + 1}):`, responseText);
-
-      // Intentar parsear como JSON
-      let result;
-      try {
-        result = JSON.parse(responseText);
-        console.log(`📥 Respuesta parseada:`, result);
-      } catch (parseError) {
-        console.error('❌ Error parseando JSON:', parseError);
-        console.log('Texto que falló:', responseText);
-        
-        // Si no es JSON pero el texto contiene "exitoso", asumir éxito
-        if (responseText.includes('exitoso') || responseText.includes('success')) {
-          result = { success: true, data: { success: true } };
-        } else {
-          throw new Error(`Respuesta inválida: ${responseText.substring(0, 100)}`);
-        }
-      }
-
-      // Verificar si el registro fue exitoso
-      const isSuccess = result.success && (result.data?.success !== false);
+    // Construir el registro con los datos correctos
+    let registro;
+    
+    if (esEstudianteUSS && estudiantesEncontrados.length === 1) {
+      const cursoEstudiante = estudiantesEncontrados[0];
+      const cursoKey = Object.keys(cursoEstudiante).find(k => k.toLowerCase() === 'curso') || "Curso";
+      const peadKey = Object.keys(cursoEstudiante).find(k => k.toLowerCase().includes('secc')) || "Sección (PEAD)";
       
-      if (!isSuccess) {
-        const errorMsg = result.data?.error || result.error || 'Error al registrar';
-        throw new Error(errorMsg);
-      }
-
-      if (registros.length > 1 && i < registros.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
+      registro = {
+        nombreCompleto: formData.nombreCompleto.trim(),
+        curso: cursoEstudiante[cursoKey] || '',
+        pead: cursoEstudiante[peadKey] || '',
+        comentarios: formData.comentarios || '',
+        solicitaCertificado: formData.solicitaCertificado,
+        tipoUsuario: tipoUsuarioTexto,
+        email: correoParaEnviar
+      };
+    } else {
+      // Para externos
+      registro = {
+        nombreCompleto: formData.nombreCompleto.trim(),
+        curso: '',
+        pead: '',
+        comentarios: formData.comentarios || '',
+        solicitaCertificado: formData.solicitaCertificado,
+        tipoUsuario: tipoUsuarioTexto,
+        email: correoParaEnviar
+      };
     }
 
-    console.log(`✅ Proceso completado.`);
-    setExitoModal(true);
-    setTimeout(() => {
-      resetearTodo();
-      setExitoModal(false);
-      setPaso('seleccion');
-    }, 3000);
+    console.log('📤 Enviando registro:', registro);
+
+    // Enviar a la API
+    const response = await fetch('/api/webinar', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(registro)
+    });
+
+    // Verificar respuesta HTTP
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ HTTP Error:', response.status, errorText);
+      throw new Error(`Error HTTP ${response.status}`);
+    }
+
+    // Obtener la respuesta
+    const result = await response.json();
+    console.log('📥 Respuesta API:', result);
+
+    // Verificar si fue exitoso
+    if (result.success && result.data?.success !== false) {
+      console.log('✅ Registro exitoso');
+      setExitoModal(true);
+      setTimeout(() => {
+        resetearTodo();
+        setExitoModal(false);
+        setPaso('seleccion');
+      }, 3000);
+    } else {
+      const errorMsg = result.data?.error || result.error || 'Error al registrar';
+      throw new Error(errorMsg);
+    }
 
   } catch (error) {
-    console.error('❌ Error general:', error);
-    setError(`Error: ${error.message}`);
+    console.error('❌ Error:', error);
+    setError(error.message);
   } finally {
     setLoading(false);
   }
