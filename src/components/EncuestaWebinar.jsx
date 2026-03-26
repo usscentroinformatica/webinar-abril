@@ -220,32 +220,31 @@ const EncuestaWebinar = () => {
   };
 
   const enviarEncuesta = async () => {
-    // Validar nombre completo (obligatorio para todos)
-    if (!formData.nombreCompleto.trim()) {
-      setError('El nombre completo es requerido');
-      return;
+  if (!formData.nombreCompleto.trim()) {
+    setError('El nombre completo es requerido');
+    return;
+  }
+
+  setLoading(true);
+  setError('');
+
+  try {
+    const esEstudianteUSS = tipoUsuario === 'uss' && estudiantesEncontrados.length > 0;
+    const tipoUsuarioTexto = esEstudianteUSS ? 'Estudiante USS' : 'Externo';
+    let correoParaEnviar = '';
+
+    if (esEstudianteUSS) {
+      correoParaEnviar = `${nombreUsuario}@uss.edu.pe`.toLowerCase();
+    } else if (tipoUsuario === 'externo') {
+      correoParaEnviar = correoExterno.trim();
     }
 
-    setLoading(true);
-    setError('');
-
-    try {
-      const esEstudianteUSS = tipoUsuario === 'uss' && estudiantesEncontrados.length > 0;
-      const tipoUsuarioTexto = esEstudianteUSS ? 'Estudiante USS' : 'Externo';
-      let correoParaEnviar = '';
-
-      if (esEstudianteUSS) {
-        correoParaEnviar = `${nombreUsuario}@uss.edu.pe`.toLowerCase();
-      } else if (tipoUsuario === 'externo') {
-        correoParaEnviar = correoExterno.trim();
-      }
-
-      // Crear registros
-      const registros = esEstudianteUSS
-        ? estudiantesEncontrados.map((cur) => {
+    // Crear registros
+    const registros = esEstudianteUSS
+      ? estudiantesEncontrados.map((cur) => {
           const cursoKey = Object.keys(cur).find(k => k.toLowerCase() === 'curso') || "Curso";
           const peadKey = Object.keys(cur).find(k => k.toLowerCase().includes('secc')) || "Sección (PEAD)";
-
+          
           return {
             nombreCompleto: formData.nombreCompleto.trim(),
             curso: cur[cursoKey] || '',
@@ -256,7 +255,7 @@ const EncuestaWebinar = () => {
             correo: correoParaEnviar
           };
         })
-        : [{
+      : [{
           nombreCompleto: formData.nombreCompleto.trim(),
           curso: '',
           pead: '',
@@ -266,53 +265,84 @@ const EncuestaWebinar = () => {
           correo: correoParaEnviar
         }];
 
-      console.log(`📤 Preparando ${registros.length} registro(s):`, registros);
+    console.log(`📤 Preparando ${registros.length} registro(s)`, registros);
 
-      if (registros.length === 0) {
-        throw new Error('No hay cursos válidos para registrar');
-      }
-
-      setProgreso({ actual: 1, total: registros.length });
-
-      // Enviar uno por uno
-      for (let i = 0; i < registros.length; i++) {
-        const registro = registros[i];
-        console.log(`📝 Enviando registro ${i + 1}/${registros.length}...`);
-
-        setProgreso({ actual: i + 1, total: registros.length });
-
-        const response = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(registro)
-        });
-
-        const result = await response.json();
-
-        if (!result.success || !result.data?.success) {
-          throw new Error(result.data?.error || 'Error al registrar');
-        }
-
-        if (registros.length > 1 && i < registros.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      }
-
-      console.log(`✅ Proceso de envío completado.`);
-      setExitoModal(true);
-      setTimeout(() => {
-        resetearTodo();
-        setExitoModal(false);
-        setPaso('seleccion');
-      }, 3000);
-
-    } catch (error) {
-      console.error('❌ Error general:', error);
-      setError(`Error: ${error.message}`);
-    } finally {
-      setLoading(false);
+    if (registros.length === 0) {
+      throw new Error('No hay cursos válidos para registrar');
     }
-  };
+
+    setProgreso({ actual: 1, total: registros.length });
+
+    for (let i = 0; i < registros.length; i++) {
+      const registro = registros[i];
+      console.log(`📝 Enviando registro ${i + 1}/${registros.length}:`, registro);
+
+      setProgreso({ actual: i + 1, total: registros.length });
+
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(registro)
+      });
+
+      // Verificar si la respuesta es OK
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ HTTP ${response.status}:`, errorText);
+        throw new Error(`Error HTTP: ${response.status}`);
+      }
+
+      // Obtener la respuesta como texto primero
+      const responseText = await response.text();
+      console.log(`📥 Respuesta cruda (${i + 1}):`, responseText);
+
+      // Intentar parsear como JSON
+      let result;
+      try {
+        result = JSON.parse(responseText);
+        console.log(`📥 Respuesta parseada:`, result);
+      } catch (parseError) {
+        console.error('❌ Error parseando JSON:', parseError);
+        console.log('Texto que falló:', responseText);
+        
+        // Si no es JSON pero el texto contiene "exitoso", asumir éxito
+        if (responseText.includes('exitoso') || responseText.includes('success')) {
+          result = { success: true, data: { success: true } };
+        } else {
+          throw new Error(`Respuesta inválida: ${responseText.substring(0, 100)}`);
+        }
+      }
+
+      // Verificar si el registro fue exitoso
+      const isSuccess = result.success && (result.data?.success !== false);
+      
+      if (!isSuccess) {
+        const errorMsg = result.data?.error || result.error || 'Error al registrar';
+        throw new Error(errorMsg);
+      }
+
+      if (registros.length > 1 && i < registros.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    console.log(`✅ Proceso completado.`);
+    setExitoModal(true);
+    setTimeout(() => {
+      resetearTodo();
+      setExitoModal(false);
+      setPaso('seleccion');
+    }, 3000);
+
+  } catch (error) {
+    console.error('❌ Error general:', error);
+    setError(`Error: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Función para resetear todo
   const resetearTodo = () => {
