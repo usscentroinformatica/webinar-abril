@@ -63,7 +63,7 @@ const EncuestaWebinar = () => {
   const [exitoModal, setExitoModal] = useState(false);
   const [baseEstudiantes, setBaseEstudiantes] = useState([]);
   const [paso, setPaso] = useState('seleccion');
-  const [progreso, setProgreso] = useState({ actual: 0, total: 0 });
+  const [progreso] = useState({ actual: 0, total: 0 });
 
   // Cargar base de datos al iniciar
   useEffect(() => {
