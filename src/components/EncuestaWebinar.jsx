@@ -252,6 +252,7 @@ const EncuestaWebinar = () => {
             comentarios: formData.comentarios || '',
             solicitaCertificado: formData.solicitaCertificado,
             tipoUsuario: tipoUsuarioTexto,
+            email: correoParaEnviar,
             correo: correoParaEnviar
           };
         })
