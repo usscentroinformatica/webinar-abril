@@ -63,7 +63,7 @@ const EncuestaWebinar = () => {
   const [exitoModal, setExitoModal] = useState(false);
   const [baseEstudiantes, setBaseEstudiantes] = useState([]);
   const [paso, setPaso] = useState('seleccion');
-  const [progreso] = useState({ actual: 0, total: 0 });
+  const [progreso, setProgreso] = useState({ actual: 0, total: 0 });
 
   // Cargar base de datos al iniciar
   useEffect(() => {
@@ -220,99 +220,99 @@ const EncuestaWebinar = () => {
   };
 
   const enviarEncuesta = async () => {
-  if (!formData.nombreCompleto.trim()) {
-    setError('El nombre completo es requerido');
-    return;
-  }
-
-  setLoading(true);
-  setError('');
-
-  try {
-    const esEstudianteUSS = tipoUsuario === 'uss' && estudiantesEncontrados.length > 0;
-    const tipoUsuarioTexto = esEstudianteUSS ? 'Estudiante USS' : 'Externo';
-    let correoParaEnviar = '';
-
-    if (esEstudianteUSS) {
-      const nombreLimpio = nombreUsuario.trim().toLowerCase();
-      correoParaEnviar = `${nombreLimpio}@uss.edu.pe`;
-    } else if (tipoUsuario === 'externo') {
-      correoParaEnviar = correoExterno.trim();
+    // Validar nombre completo (obligatorio para todos)
+    if (!formData.nombreCompleto.trim()) {
+      setError('El nombre completo es requerido');
+      return;
     }
 
-    // Construir el registro con los datos correctos
-    let registro;
-    
-    if (esEstudianteUSS && estudiantesEncontrados.length === 1) {
-      const cursoEstudiante = estudiantesEncontrados[0];
-      const cursoKey = Object.keys(cursoEstudiante).find(k => k.toLowerCase() === 'curso') || "Curso";
-      const peadKey = Object.keys(cursoEstudiante).find(k => k.toLowerCase().includes('secc')) || "Sección (PEAD)";
-      
-      registro = {
-        nombreCompleto: formData.nombreCompleto.trim(),
-        curso: cursoEstudiante[cursoKey] || '',
-        pead: cursoEstudiante[peadKey] || '',
-        comentarios: formData.comentarios || '',
-        solicitaCertificado: formData.solicitaCertificado,
-        tipoUsuario: tipoUsuarioTexto,
-        email: correoParaEnviar
-      };
-    } else {
-      // Para externos
-      registro = {
-        nombreCompleto: formData.nombreCompleto.trim(),
-        curso: '',
-        pead: '',
-        comentarios: formData.comentarios || '',
-        solicitaCertificado: formData.solicitaCertificado,
-        tipoUsuario: tipoUsuarioTexto,
-        email: correoParaEnviar
-      };
-    }
+    setLoading(true);
+    setError('');
 
-    console.log('📤 Enviando registro:', registro);
+    try {
+      const esEstudianteUSS = tipoUsuario === 'uss' && estudiantesEncontrados.length > 0;
+      const tipoUsuarioTexto = esEstudianteUSS ? 'Estudiante USS' : 'Externo';
+      let correoParaEnviar = '';
 
-    // Enviar a la API
-    const response = await fetch('/api/webinar', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(registro)
-    });
+      if (esEstudianteUSS) {
+        correoParaEnviar = `${nombreUsuario}@uss.edu.pe`.toLowerCase();
+      } else if (tipoUsuario === 'externo') {
+        correoParaEnviar = correoExterno.trim();
+      }
 
-    // Verificar respuesta HTTP
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ HTTP Error:', response.status, errorText);
-      throw new Error(`Error HTTP ${response.status}`);
-    }
+      // Crear registros
+      const registros = esEstudianteUSS
+        ? estudiantesEncontrados.map((cur) => {
+          const cursoKey = Object.keys(cur).find(k => k.toLowerCase() === 'curso') || "Curso";
+          const peadKey = Object.keys(cur).find(k => k.toLowerCase().includes('secc')) || "Sección (PEAD)";
 
-    // Obtener la respuesta
-    const result = await response.json();
-    console.log('📥 Respuesta API:', result);
+          return {
+            nombreCompleto: formData.nombreCompleto.trim(),
+            curso: cur[cursoKey] || '',
+            pead: cur[peadKey] || '',
+            comentarios: formData.comentarios || '',
+            solicitaCertificado: formData.solicitaCertificado,
+            tipoUsuario: tipoUsuarioTexto,
+            correo: correoParaEnviar
+          };
+        })
+        : [{
+          nombreCompleto: formData.nombreCompleto.trim(),
+          curso: '',
+          pead: '',
+          comentarios: formData.comentarios || '',
+          solicitaCertificado: formData.solicitaCertificado,
+          tipoUsuario: tipoUsuarioTexto,
+          correo: correoParaEnviar
+        }];
 
-    // Verificar si fue exitoso
-    if (result.success && result.data?.success !== false) {
-      console.log('✅ Registro exitoso');
+      console.log(`📤 Preparando ${registros.length} registro(s):`, registros);
+
+      if (registros.length === 0) {
+        throw new Error('No hay cursos válidos para registrar');
+      }
+
+      setProgreso({ actual: 1, total: registros.length });
+
+      // Enviar uno por uno
+      for (let i = 0; i < registros.length; i++) {
+        const registro = registros[i];
+        console.log(`📝 Enviando registro ${i + 1}/${registros.length}...`);
+
+        setProgreso({ actual: i + 1, total: registros.length });
+
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(registro)
+        });
+
+        const result = await response.json();
+
+        if (!result.success || !result.data?.success) {
+          throw new Error(result.data?.error || 'Error al registrar');
+        }
+
+        if (registros.length > 1 && i < registros.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      console.log(`✅ Proceso de envío completado.`);
       setExitoModal(true);
       setTimeout(() => {
         resetearTodo();
         setExitoModal(false);
         setPaso('seleccion');
       }, 3000);
-    } else {
-      const errorMsg = result.data?.error || result.error || 'Error al registrar';
-      throw new Error(errorMsg);
-    }
 
-  } catch (error) {
-    console.error('❌ Error:', error);
-    setError(error.message);
-  } finally {
-    setLoading(false);
-  }
-};
+    } catch (error) {
+      console.error('❌ Error general:', error);
+      setError(`Error: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Función para resetear todo
   const resetearTodo = () => {
