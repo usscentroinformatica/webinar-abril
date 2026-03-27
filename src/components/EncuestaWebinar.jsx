@@ -253,7 +253,7 @@ const EncuestaWebinar = () => {
             comentarios: formData.comentarios || '',
             solicitaCertificado: formData.solicitaCertificado,
             tipoUsuario: tipoUsuarioTexto,
-            correo: correoParaEnviar
+            email: correoParaEnviar
           };
         })
         : [{
@@ -263,7 +263,7 @@ const EncuestaWebinar = () => {
           comentarios: formData.comentarios || '',
           solicitaCertificado: formData.solicitaCertificado,
           tipoUsuario: tipoUsuarioTexto,
-          correo: correoParaEnviar
+          email: correoParaEnviar
         }];
 
       console.log(`📤 Preparando ${registros.length} registro(s):`, registros);
