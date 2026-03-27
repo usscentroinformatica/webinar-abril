@@ -146,20 +146,8 @@ const EncuestaWebinar = () => {
     if (encontrados.length > 0) {
       console.log('✅ Se encontraron', encontrados.length, 'cursos');
 
-      // VERIFICAR SI YA ESTÁ REGISTRADO EN EL WEBINAR
-      try {
-        const checkUrl = `${API_URL}?email=${encodeURIComponent(emailCompleto)}`;
-        const res = await fetch(checkUrl);
-        const data = await res.json();
-
-        if (data.data?.registrado === true) {
-          setError('⚠️ Ya te has registrado a este webinar. Solo se permite un registro por persona.');
-          setLoading(false);
-          return;
-        }
-      } catch (e) {
-        console.warn('Error verificando registro:', e);
-      }
+      // La API tardaba en verificar, ahora confíamos en que si está duplicado
+      // Code.gs lo rechazará al momento de enviar el formulario para que el login sea rápido.
 
       setEstudiantesEncontrados(encontrados);
 
@@ -240,31 +228,17 @@ const EncuestaWebinar = () => {
         correoParaEnviar = correoExterno.trim();
       }
 
-      // Crear registros
-      const registros = esEstudianteUSS
-        ? estudiantesEncontrados.map((cur) => {
-          const cursoKey = Object.keys(cur).find(k => k.toLowerCase() === 'curso') || "Curso";
-          const peadKey = Object.keys(cur).find(k => k.toLowerCase().includes('secc')) || "Sección (PEAD)";
-
-          return {
-            nombreCompleto: formData.nombreCompleto.trim(),
-            curso: cur[cursoKey] || '',
-            pead: cur[peadKey] || '',
-            comentarios: formData.comentarios || '',
-            solicitaCertificado: formData.solicitaCertificado,
-            tipoUsuario: tipoUsuarioTexto,
-            email: correoParaEnviar
-          };
-        })
-        : [{
-          nombreCompleto: formData.nombreCompleto.trim(),
-          curso: '',
-          pead: '',
-          comentarios: formData.comentarios || '',
-          solicitaCertificado: formData.solicitaCertificado,
-          tipoUsuario: tipoUsuarioTexto,
-          email: correoParaEnviar
-        }];
+      // Enviar siempre un solo registro para optimizar velocidad.
+      // Code.gs en el backend se encarga de guardar al estudiante y buscar su primer curso.
+      const registros = [{
+        nombreCompleto: formData.nombreCompleto.trim(),
+        curso: formData.curso || '',
+        pead: formData.pead || '',
+        comentarios: formData.comentarios || '',
+        solicitaCertificado: formData.solicitaCertificado,
+        tipoUsuario: tipoUsuarioTexto,
+        email: correoParaEnviar
+      }];
 
       console.log(`📤 Preparando ${registros.length} registro(s):`, registros);
 
@@ -289,8 +263,11 @@ const EncuestaWebinar = () => {
 
         const result = await response.json();
 
-        if (!result.success || !result.data?.success) {
-          throw new Error(result.data?.error || 'Error al registrar');
+        // Validar éxito de la respuesta tanto si viene de Vercel como directo de Google Apps Script
+        const isExito = result.data ? result.data.success : result.success;
+        
+        if (!isExito) {
+          throw new Error(result.data?.error || result.error || 'Error al registrar');
         }
 
         if (registros.length > 1 && i < registros.length - 1) {
